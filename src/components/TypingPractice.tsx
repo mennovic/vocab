@@ -6,6 +6,8 @@ interface TypingPracticeProps {
   word: Word;
   showTerm: boolean;
   onRate: (rating: UserRating) => void;
+  sourceLanguage?: string;
+  targetLanguage?: string;
 }
 
 function normalizeAnswer(str: string): string {
@@ -47,7 +49,7 @@ function calculateSimilarity(a: string, b: string): number {
   return 1 - distance / maxLength;
 }
 
-export function TypingPractice({ word, showTerm, onRate }: TypingPracticeProps) {
+export function TypingPractice({ word, showTerm, onRate, sourceLanguage, targetLanguage }: TypingPracticeProps) {
   const [answer, setAnswer] = useState('');
   const [submitted, setSubmitted] = useState(false);
   const [isCorrect, setIsCorrect] = useState(false);
@@ -56,6 +58,10 @@ export function TypingPractice({ word, showTerm, onRate }: TypingPracticeProps) 
 
   const question = showTerm ? word.term : word.definition;
   const correctAnswer = showTerm ? word.definition : word.term;
+
+  // Determine language labels for the prompt
+  const fromLang = showTerm ? (sourceLanguage || 'het woord') : (targetLanguage || 'de vertaling');
+  const toLang = showTerm ? (targetLanguage || 'de vertaling') : (sourceLanguage || 'het woord');
 
   useEffect(() => {
     inputRef.current?.focus();
@@ -104,7 +110,7 @@ export function TypingPractice({ word, showTerm, onRate }: TypingPracticeProps) 
       {/* Question */}
       <div className="card p-6 text-center mb-6">
         <p className="text-sm text-slate-500 dark:text-slate-400 mb-2">
-          {showTerm ? 'Vertaal dit woord' : 'Wat is het woord voor'}
+          Vertaal naar {toLang}:
         </p>
         <p className="text-2xl font-semibold">{question}</p>
       </div>

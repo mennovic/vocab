@@ -1,15 +1,13 @@
 import { useEffect, useState, useCallback, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { ArrowLeft, Settings, Trophy, X, RotateCcw } from 'lucide-react';
-import { Flashcard } from '@/components/Flashcard';
 import { TypingPractice } from '@/components/TypingPractice';
-import { MultipleChoice } from '@/components/MultipleChoice';
 import {
   getList, getWordsByList, getDueWords, updateWord, updateStats,
   getStats, updateStreak, createSession, updateSession
 } from '@/utils/db';
 import { calculateNextReview } from '@/utils/sm2';
-import type { WordList, Word, UserRating, PracticeMode, PracticeDirection, StudySession } from '@/types';
+import type { WordList, Word, UserRating, PracticeDirection, StudySession } from '@/types';
 
 function shuffleArray<T>(array: T[]): T[] {
   const shuffled = [...array];
@@ -26,7 +24,6 @@ export function Practice() {
 
   const [list, setList] = useState<WordList | null>(null);
   const [words, setWords] = useState<Word[]>([]);
-  const [allWords, setAllWords] = useState<Word[]>([]);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [loading, setLoading] = useState(true);
   const [finished, setFinished] = useState(false);
@@ -38,8 +35,7 @@ export function Practice() {
 
   // Settings
   const [showSettings, setShowSettings] = useState(false);
-  const [mode, setMode] = useState<PracticeMode>('flashcard');
-  const [direction, setDirection] = useState<PracticeDirection>('mixed');
+  const [direction, setDirection] = useState<PracticeDirection>('term-to-def');
 
   // Load data
   useEffect(() => {
@@ -48,24 +44,19 @@ export function Practice() {
 
       let wordsToStudy: Word[];
       let listData: WordList | null = null;
-      let allListWords: Word[] = [];
 
       if (listId) {
         listData = await getList(listId) || null;
         const dueWords = await getDueWords(listId);
-        allListWords = await getWordsByList(listId);
+        const allListWords = await getWordsByList(listId);
         wordsToStudy = dueWords.length > 0 ? dueWords : allListWords;
       } else {
         const dueWords = await getDueWords();
         wordsToStudy = dueWords;
-        // For multiple choice, we need more words
-        const { getAllWords } = await import('@/utils/db');
-        allListWords = await getAllWords();
       }
 
       setList(listData);
       setWords(shuffleArray(wordsToStudy));
-      setAllWords(allListWords.length > 0 ? allListWords : wordsToStudy);
       setLoading(false);
 
       // Create session
@@ -282,63 +273,38 @@ export function Practice() {
       {/* Settings panel */}
       {showSettings && (
         <div className="card p-4 mb-6 animate-slide-up">
-          <h3 className="font-medium mb-3">Oefenmodus</h3>
-          <div className="grid grid-cols-3 gap-2 mb-4">
-            {(['flashcard', 'typing', 'multiple-choice'] as const).map(m => (
-              <button
-                key={m}
-                onClick={() => setMode(m)}
-                className={`btn btn-sm ${mode === m ? 'btn-primary' : 'btn-secondary'}`}
-              >
-                {m === 'flashcard' && 'Kaarten'}
-                {m === 'typing' && 'Typen'}
-                {m === 'multiple-choice' && 'Keuze'}
-              </button>
-            ))}
-          </div>
-
-          <h3 className="font-medium mb-3">Richting</h3>
-          <div className="grid grid-cols-3 gap-2">
-            {(['term-to-def', 'def-to-term', 'mixed'] as const).map(d => (
-              <button
-                key={d}
-                onClick={() => setDirection(d)}
-                className={`btn btn-sm ${direction === d ? 'btn-primary' : 'btn-secondary'}`}
-              >
-                {d === 'term-to-def' && 'Woord→Bet'}
-                {d === 'def-to-term' && 'Bet→Woord'}
-                {d === 'mixed' && 'Gemengd'}
-              </button>
-            ))}
+          <h3 className="font-medium mb-3">Vertaalrichting</h3>
+          <div className="space-y-2">
+            <button
+              onClick={() => setDirection('term-to-def')}
+              className={`btn w-full justify-start ${direction === 'term-to-def' ? 'btn-primary' : 'btn-secondary'}`}
+            >
+              {list?.sourceLanguage || 'Woord'} → {list?.targetLanguage || 'Vertaling'}
+            </button>
+            <button
+              onClick={() => setDirection('def-to-term')}
+              className={`btn w-full justify-start ${direction === 'def-to-term' ? 'btn-primary' : 'btn-secondary'}`}
+            >
+              {list?.targetLanguage || 'Vertaling'} → {list?.sourceLanguage || 'Woord'}
+            </button>
+            <button
+              onClick={() => setDirection('mixed')}
+              className={`btn w-full justify-start ${direction === 'mixed' ? 'btn-primary' : 'btn-secondary'}`}
+            >
+              Gemengd (willekeurig)
+            </button>
           </div>
         </div>
       )}
 
-      {/* Practice component */}
-      {mode === 'flashcard' && (
-        <Flashcard
-          word={currentWord}
-          showTerm={showTerm}
-          onRate={handleRate}
-        />
-      )}
-
-      {mode === 'typing' && (
-        <TypingPractice
-          word={currentWord}
-          showTerm={showTerm}
-          onRate={handleRate}
-        />
-      )}
-
-      {mode === 'multiple-choice' && (
-        <MultipleChoice
-          word={currentWord}
-          allWords={allWords}
-          showTerm={showTerm}
-          onRate={handleRate}
-        />
-      )}
+      {/* Typing practice */}
+      <TypingPractice
+        word={currentWord}
+        showTerm={showTerm}
+        onRate={handleRate}
+        sourceLanguage={list?.sourceLanguage}
+        targetLanguage={list?.targetLanguage}
+      />
     </div>
   );
 }

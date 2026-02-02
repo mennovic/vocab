@@ -62,15 +62,7 @@ export interface ReviewResult {
   responseTime: number; // ms
 }
 
-export type PracticeMode = 'flashcard' | 'typing' | 'multiple-choice';
 export type PracticeDirection = 'term-to-def' | 'def-to-term' | 'mixed';
-
-export interface PracticeSettings {
-  mode: PracticeMode;
-  direction: PracticeDirection;
-  onlyDueWords: boolean;
-  limitCount?: number;
-}
 
 // OCR parsing result
 export interface ParsedWordPair {
