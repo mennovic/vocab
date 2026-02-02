@@ -1,14 +1,15 @@
 import Tesseract from 'tesseract.js';
 import type { OCRResult, ParsedWordPair } from '@/types';
 
-// Common separators for word pairs
+// Common separators for word pairs (order matters - try more specific first)
 const SEPARATORS = [
+  /\s+[-–—]\s+/,      // Dashes with spaces
   /\s*[-–—]\s*/,      // Dashes
   /\s*[=]\s*/,        // Equals
-  /\s*[:]\s*/,        // Colon
+  /\s*[:]\s*/,        // Colon (but not in time formats)
   /\s*[|]\s*/,        // Pipe
   /\t+/,              // Tab(s)
-  /\s{3,}/,           // Multiple spaces
+  /\s{4,}/,           // Multiple spaces (4+)
 ];
 
 // Progress callback type
@@ -18,7 +19,7 @@ export async function performOCR(
   imageSource: File | string,
   onProgress?: ProgressCallback
 ): Promise<string> {
-  const worker = await Tesseract.createWorker('nld+fra+eng+deu', 1, {
+  const worker = await Tesseract.createWorker('fra+nld+eng+deu', 1, {
     logger: (m) => {
       if (onProgress && m.status === 'recognizing text') {
         onProgress(Math.round(m.progress * 100), 'Tekst herkennen...');
@@ -48,6 +49,11 @@ export function parseWordPairs(rawText: string): OCRResult {
   const parseErrors: string[] = [];
 
   for (const line of lines) {
+    // Skip likely headers (short lines without separators, all caps, or known header patterns)
+    if (isLikelyHeader(line)) {
+      continue;
+    }
+
     const pair = parseLine(line);
     if (pair) {
       pairs.push(pair);
@@ -62,6 +68,28 @@ export function parseWordPairs(rawText: string): OCRResult {
     pairs,
     parseErrors,
   };
+}
+
+function isLikelyHeader(line: string): boolean {
+  // Skip lines that are likely section headers
+  const cleanLine = line.replace(/^\d+\.\s*/, '').trim();
+
+  // Very short lines without separators are likely headers
+  if (cleanLine.length < 15 && !SEPARATORS.some(sep => sep.test(cleanLine))) {
+    // Check if it looks like a header (no dash/separator)
+    if (!cleanLine.includes('-') && !cleanLine.includes('=')) {
+      return true;
+    }
+  }
+
+  // Column headers like "Frans" "Nederlands"
+  const headerWords = ['frans', 'nederlands', 'engels', 'duits', 'spaans', 'woord', 'betekenis', 'vertaling'];
+  const lowerLine = cleanLine.toLowerCase();
+  if (headerWords.some(h => lowerLine === h || lowerLine.startsWith(h + ' ') || lowerLine.endsWith(' ' + h))) {
+    return true;
+  }
+
+  return false;
 }
 
 function parseLine(line: string): ParsedWordPair | null {
@@ -92,9 +120,12 @@ function parseLine(line: string): ParsedWordPair | null {
 function cleanWord(word: string): string {
   return word
     .trim()
-    // Remove common OCR artifacts
-    .replace(/^[•·∙○●◦▪▫■□\-\*\d\.]+\s*/, '') // Bullet points, numbers
-    .replace(/[^\p{L}\p{N}\s\-'.,()]/gu, '') // Keep only letters, numbers, basic punctuation
+    // Remove numbered list prefixes like "1.", "2.", "13." etc.
+    .replace(/^\d+\.\s*/, '')
+    // Remove common OCR artifacts and bullet points
+    .replace(/^[•·∙○●◦▪▫■□\-\*]+\s*/, '')
+    // Keep letters (including accented), numbers, spaces, and common punctuation
+    .replace(/[^\p{L}\p{N}\s\-'.,()é è ê ë à â ä ù û ü ï î ô ö ç œ æ]/gu, '')
     .trim();
 }
 
@@ -142,8 +173,9 @@ export function preprocessImage(file: File): Promise<string> {
         const canvas = document.createElement('canvas');
         const ctx = canvas.getContext('2d')!;
 
-        // Scale up small images
-        const scale = Math.max(1, 1500 / Math.max(img.width, img.height));
+        // Scale up small images for better OCR
+        const minDimension = 2000;
+        const scale = Math.max(1, minDimension / Math.max(img.width, img.height));
         canvas.width = img.width * scale;
         canvas.height = img.height * scale;
 
@@ -152,7 +184,8 @@ export function preprocessImage(file: File): Promise<string> {
         ctx.fillRect(0, 0, canvas.width, canvas.height);
         ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
 
-        // Convert to grayscale and increase contrast
+        // Light preprocessing - just convert to grayscale and boost contrast slightly
+        // Don't binarize as it can destroy thin strokes and accented characters
         const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
         const data = imageData.data;
 
@@ -160,17 +193,15 @@ export function preprocessImage(file: File): Promise<string> {
           // Convert to grayscale
           const gray = data[i] * 0.299 + data[i + 1] * 0.587 + data[i + 2] * 0.114;
 
-          // Increase contrast
-          const contrast = 1.5;
+          // Mild contrast boost (1.2 instead of 1.5)
+          const contrast = 1.2;
           const factor = (259 * (contrast * 100 + 255)) / (255 * (259 - contrast * 100));
           const newGray = Math.min(255, Math.max(0, factor * (gray - 128) + 128));
 
-          // Apply threshold for cleaner text
-          const threshold = newGray > 140 ? 255 : 0;
-
-          data[i] = threshold;
-          data[i + 1] = threshold;
-          data[i + 2] = threshold;
+          // Keep grayscale values instead of harsh binarization
+          data[i] = newGray;
+          data[i + 1] = newGray;
+          data[i + 2] = newGray;
         }
 
         ctx.putImageData(imageData, 0, 0);
